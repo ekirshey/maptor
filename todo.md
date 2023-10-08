@@ -1,0 +1,36 @@
+# MAP EDITOR TODO
+
+- **General**
+    - Group input in a reasonable (not crazy abstracted!) way
+- **Multiple Tilesets**
+    - Add/Deleted
+    - Select 
+    - Store useed tileset in tile
+- **Tlemap**
+    - Configure Tilemap Size
+    - Configure Tile size
+    - ~~Camera~~
+    - Movement around the map
+    - ~~Larger than 1 screen tilemap~~
+    - ~~Zoom in/out of tilemap~~
+    - Show a grid
+- **Layers**
+    - View layers
+    - Select layers
+    - Hide Layers
+    - Add/Delete Layers
+- **Tools** 
+    - Fill Tool
+    - Block place
+    - Border tool
+    - Undo/Redo
+    - Erase
+    - Select Multiple Tiles from tileset
+    - Show current tile (Probably under the mouse), maybe also a display box
+- **Performance**
+    - Don't rebuild texture if the tile being placed or erased is the same
+    - Chunkify the layers
+
+- Read/Write format
+- Lua scripting for map generation
+- Custom data on tiles

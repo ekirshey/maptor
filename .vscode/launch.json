@@ -1,0 +1,16 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "zig-debug",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "stopAtEntry": false,
+            "program": "${workspaceFolder}/zig-out/bin/tiler.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "zig-debug-build",
+            "externalConsole": true,
+        },
+    ]
+}
