@@ -2,6 +2,9 @@ const std = @import("std");
 const ray = @import("raylib.zig");
 const ui = @import("ui.zig");
 
+const screen_width: u32 = 1440;
+const screen_height: u32 = 960;
+
 const Button = struct {
     is_down: bool,
     is_released: bool,
@@ -75,6 +78,13 @@ const Rect = struct {
 const Vector2 = struct {
     x: f32,
     y: f32,
+
+    fn fromRayVector(vec: ray.Vector2) Vector2 {
+        return .{
+            .x = vec.x,
+            .y = vec.y,
+        };
+    }
 };
 
 const Vector2Int = struct {
@@ -89,7 +99,7 @@ const Vector2Int = struct {
     }
 };
 
-fn tileIdxToVector2Int(tile_idx: u32, dimensions: Vector2Int) Vector2Int {
+fn tileIdxToTileCoords(tile_idx: u32, dimensions: Vector2Int) Vector2Int {
     return .{
         .x = if (tile_idx != 0) tile_idx % dimensions.x else 0,
         .y = if (tile_idx != 0) @divFloor(tile_idx, dimensions.x) else 0,
@@ -123,7 +133,7 @@ const TileSet = struct {
     }
 
     fn get_frame_rect(self: TileSet, tile_idx: u32) ray.Rectangle {
-        const tile_coord = tileIdxToVector2Int(tile_idx, self.dimensions);
+        const tile_coord = tileIdxToTileCoords(tile_idx, self.dimensions);
         return ray.Rectangle{
             .x = @floatFromInt(tile_coord.x * self.tilesize.x),
             .y = @floatFromInt(tile_coord.y * self.tilesize.y),
@@ -274,22 +284,27 @@ const Tile = struct {
 };
 
 const Chunk = struct {
-    render_texture: ray.RenderTexture2D,
+    render_texture: ?ray.RenderTexture2D,
     tiles: std.ArrayList(Tile),
+    position: Vector2,
     tile_size: Vector2Int,
     chunk_size: Vector2Int,
     tile_dims: Vector2Int,
     texture_dimensions: Vector2,
 
-    fn init(allocator: std.mem.Allocator, chunk_size: Vector2Int, tile_size: Vector2Int) !Chunk {
+    fn init(allocator: std.mem.Allocator, position: Vector2Int, chunk_size: Vector2Int, tile_size: Vector2Int) !Chunk {
         const tile_dims = Vector2Int{
             .x = chunk_size.x / tile_size.x,
             .y = chunk_size.y / tile_size.y,
         };
         const num_tiles: u32 = tile_dims.x * tile_dims.y;
         var chunk = Chunk{
-            .render_texture = ray.LoadRenderTexture(@intCast(chunk_size.x), @intCast(chunk_size.y)),
+            .render_texture = null,
             .tiles = try std.ArrayList(Tile).initCapacity(allocator, num_tiles),
+            .position = .{
+                .x = @floatFromInt(position.x),
+                .y = @floatFromInt(position.y),
+            },
             .tile_size = tile_size,
             .chunk_size = chunk_size,
             .tile_dims = tile_dims,
@@ -307,21 +322,54 @@ const Chunk = struct {
             num_tiles,
         );
 
-        ray.BeginTextureMode(chunk.render_texture);
-        ray.ClearBackground(ray.BLANK);
-        ray.EndTextureMode();
-
         return chunk;
     }
 
-    fn redraw(self: *Chunk, tileset: TileSet) void {
-        ray.BeginTextureMode(self.render_texture);
+    fn createTexture(self: *Chunk) void {
+        self.render_texture = ray.LoadRenderTexture(@intCast(self.chunk_size.x), @intCast(self.chunk_size.y));
+        ray.BeginTextureMode(self.render_texture.?);
+        ray.ClearBackground(ray.BLANK);
+        ray.EndTextureMode();
+    }
+
+    fn updateTile(self: *Chunk, world_position: Vector2, tileset_idx: u32) bool {
+        var tile_position: Vector2 = .{
+            .x = world_position.x - self.position.x,
+            .y = world_position.y - self.position.y,
+        };
+        const tile_size_x: f32 = @floatFromInt(self.tile_size.x);
+        const tile_size_y: f32 = @floatFromInt(self.tile_size.y);
+        const tile_coords = Vector2Int{ .x = @intFromFloat(tile_position.x / tile_size_x), .y = @intFromFloat(tile_position.y / tile_size_y) };
+        const tile_idx: u32 = tile_coords.y * self.tile_dims.x + tile_coords.x;
+
+        var tile: *Tile = &self.tiles.items[tile_idx];
+        if (tile.occupied == true and tile.tileset_idx == tileset_idx) {
+            return false;
+        }
+
+        tile.tileset_idx = tileset_idx;
+        tile.occupied = true;
+
+        return true;
+    }
+
+    fn paintTile(self: *Chunk, world_position: Vector2, tileset_idx: u32, tileset: TileSet) void {
+        // No tile needs to be updated
+        if (!self.updateTile(world_position, tileset_idx)) {
+            return;
+        }
+        if (self.render_texture == null) {
+            self.createTexture();
+        }
+        ray.BeginTextureMode(self.render_texture.?);
         ray.ClearBackground(ray.BLANK);
         for (self.tiles.items, 0..) |tile, i| {
-            const coords = tileIdxToVector2Int(@intCast(i), self.tile_dims);
+            const coords = tileIdxToTileCoords(@intCast(i), self.tile_dims);
+            const world_tile_x: f32 = @floatFromInt(self.tile_size.x * coords.x);
+            const world_tile_y: f32 = @floatFromInt(self.tile_size.y * coords.y);
             var world_pos: Vector2 = .{
-                .x = @floatFromInt(self.tile_size.x * coords.x),
-                .y = @floatFromInt(self.tile_size.y * coords.y),
+                .x = world_tile_x,
+                .y = world_tile_y,
             };
             if (tile.occupied) {
                 tileset.draw_tile(tile.tileset_idx, world_pos);
@@ -330,75 +378,112 @@ const Chunk = struct {
         ray.EndTextureMode();
     }
 
-    fn paintTile(self: *Chunk, tile_idx: u32, tileset_idx: u32, tileset: TileSet) void {
-        var tile = &self.tiles.items[tile_idx];
-        tile.tileset_idx = tileset_idx;
-        ray.BeginTextureMode(self.render_texture);
-
-        const coords = tileIdxToVector2Int(tile_idx, self.tile_dims);
-        var world_pos: Vector2 = .{
-            .x = @floatFromInt(self.tile_size.x * coords.x),
-            .y = @floatFromInt(self.tile_size.y * coords.y),
-        };
-
-        tileset.draw_tile(tile.tileset_idx, world_pos);
-
-        ray.EndTextureMode();
-    }
-
-    fn draw(self: Chunk) void {
+    fn draw(self: *Chunk) void {
+        if (self.render_texture == null) {
+            return;
+        }
         ray.DrawTextureRec(
-            self.render_texture.texture,
+            self.render_texture.?.texture,
             ray.Rectangle{
                 .x = 0,
                 .y = 0,
                 .width = self.texture_dimensions.x,
                 .height = -1.0 * self.texture_dimensions.y,
             },
-            ray.Vector2{ .x = 0, .y = 0 },
+            ray.Vector2{ .x = self.position.x, .y = self.position.y },
             ray.WHITE,
         );
     }
 
     fn deinit(self: *Chunk) void {
-        ray.UnloadRenderTexture(self.render_texture);
+        if (self.render_texture != null) {
+            ray.UnloadRenderTexture(self.render_texture.?);
+        }
         self.tiles.deinit();
     }
 };
 
 const Layer = struct {
     chunks: std.ArrayList(Chunk),
-    map_size: Vector2Int,
     chunk_size: Vector2Int,
-    tile_size: Vector2Int,
+    layer_dims: Vector2Int,
 
     fn init(allocator: std.mem.Allocator, map_size: Vector2Int, chunk_size: Vector2Int, tile_size: Vector2Int) !Layer {
-        const chunk_dims = Vector2Int{
+        const layer_dims = Vector2Int{
             .x = map_size.x / chunk_size.x,
             .y = map_size.y / chunk_size.y,
         };
-        const num_chunks = chunk_dims.x * chunk_dims.y;
+        const num_chunks = layer_dims.x * layer_dims.y;
         var layer = Layer{
             .chunks = try std.ArrayList(Chunk).initCapacity(allocator, num_chunks),
-            .map_size = map_size,
             .chunk_size = chunk_size,
-            .tile_size = tile_size,
+            .layer_dims = layer_dims,
         };
 
-        for (0..num_chunks) |_| {
-            try layer.chunks.append(try Chunk.init(allocator, chunk_size, tile_size));
+        var x: u32 = 0;
+        var y: u32 = 0;
+        while (y < layer_dims.y) : (y += 1) {
+            x = 0;
+            while (x < layer_dims.x) : (x += 1) {
+                var position: Vector2Int = .{
+                    .x = x * chunk_size.x,
+                    .y = y * chunk_size.y,
+                };
+                try layer.chunks.append(try Chunk.init(allocator, position, chunk_size, tile_size));
+            }
         }
-
         return layer;
     }
 
-    fn paintTile(self: *Layer) void {
-        _ = self;
+    fn worldPositionToChunkCoords(self: Layer, world_position: Vector2) Vector2Int {
+        const world_x: u32 = @intFromFloat(world_position.x);
+        const world_y: u32 = @intFromFloat(world_position.y);
+        return .{
+            .x = world_x / self.chunk_size.x,
+            .y = world_y / self.chunk_size.y,
+        };
     }
 
-    fn draw(self: Layer, camera: ray.Camera2D) void {
-        _ = self;
-        _ = camera;
+    fn paintTile(self: *Layer, world_position: Vector2, new_tile: u32, tileset: TileSet) void {
+        const chunk_coords = self.worldPositionToChunkCoords(world_position);
+        const chunk_idx = chunk_coords.y * self.layer_dims.x + chunk_coords.x;
+        if (chunk_idx < 0 or chunk_idx >= self.chunks.items.len) {
+            return;
+        }
+        self.chunks.items[chunk_idx].paintTile(world_position, new_tile, tileset);
+    }
+
+    // pass down world bounds from tilemap instead
+    fn draw(self: *Layer, camera: ray.Camera2D) void {
+        //EKHACK testing will wrap screensize
+        const tl = ray.GetScreenToWorld2D(ray.Vector2{ .x = 0, .y = 0 }, camera);
+        const br = ray.GetScreenToWorld2D(ray.Vector2{ .x = screen_width, .y = screen_height }, camera);
+        const layer_x: f32 = @floatFromInt(self.layer_dims.x * self.chunk_size.x);
+        const layer_y: f32 = @floatFromInt(self.layer_dims.y * self.chunk_size.y);
+        const tl_chunk = self.worldPositionToChunkCoords(Vector2{
+            .x = std.math.clamp(tl.x, 0.0, layer_x),
+            .y = std.math.clamp(tl.y, 0.0, layer_y),
+        });
+        const br_chunk = self.worldPositionToChunkCoords(Vector2{
+            .x = std.math.clamp(br.x, 0.0, layer_x),
+            .y = std.math.clamp(br.y, 0.0, layer_y),
+        });
+        var x: u32 = tl_chunk.x;
+        var y: u32 = tl_chunk.y;
+        while (y <= br_chunk.y and y < self.layer_dims.y) : (y += 1) {
+            x = 0;
+            while (x <= br_chunk.x and x < self.layer_dims.x) : (x += 1) {
+                const chunk_idx = y * self.layer_dims.x + x;
+                self.chunks.items[chunk_idx].draw();
+            }
+        }
+    }
+
+    fn deinit(self: *Layer) void {
+        for (self.chunks.items) |*chunk| {
+            chunk.deinit();
+        }
+        self.chunks.deinit();
     }
 };
 
@@ -407,9 +492,9 @@ const TileMap = struct {
     tile_dims: Vector2Int,
     tile_size: Vector2Int,
     active_layer: u32,
-    layers: std.ArrayList(Chunk),
+    layers: std.ArrayList(Layer),
 
-    fn init(allocator: std.mem.Allocator, map_size: Vector2Int, tile_size: Vector2Int, initial_layers: usize) !TileMap {
+    fn init(allocator: std.mem.Allocator, map_size: Vector2Int, chunk_size: Vector2Int, tile_size: Vector2Int, initial_layers: usize) !TileMap {
         var tilemap = TileMap{
             .map_bounds = Rect{
                 .x = 0,
@@ -420,11 +505,11 @@ const TileMap = struct {
             .tile_dims = Vector2Int{ .x = map_size.x / tile_size.x, .y = map_size.y / tile_size.y },
             .tile_size = tile_size,
             .active_layer = 0,
-            .layers = try std.ArrayList(Chunk).initCapacity(allocator, initial_layers),
+            .layers = try std.ArrayList(Layer).initCapacity(allocator, initial_layers),
         };
 
         for (0..initial_layers) |_| {
-            try tilemap.layers.append(try Chunk.init(allocator, map_size, tile_size));
+            try tilemap.layers.append(try Layer.init(allocator, map_size, chunk_size, tile_size));
         }
 
         return tilemap;
@@ -465,26 +550,14 @@ const TileMap = struct {
             return;
         }
 
-        var world_space = ray.GetScreenToWorld2D(ray.Vector2{ .x = mouse_state.position.x, .y = mouse_state.position.y }, camera);
-        if (self.map_bounds.containsPoint(Vector2{ .x = world_space.x, .y = world_space.y }) == false) {
+        var world_position = Vector2.fromRayVector(ray.GetScreenToWorld2D(ray.Vector2{ .x = mouse_state.position.x, .y = mouse_state.position.y }, camera));
+        if (self.map_bounds.containsPoint(Vector2{ .x = world_position.x, .y = world_position.y }) == false) {
             return;
         }
-        const ftile_x: f32 = @floatFromInt(self.tile_size.x);
-        const ftile_y: f32 = @floatFromInt(self.tile_size.y);
-        const tile_x: u32 = @intFromFloat(world_space.x / ftile_x);
-        const tile_y: u32 = @intFromFloat(world_space.y / ftile_y);
-
-        const tile_idx: u32 = tile_y * self.tile_dims.x + tile_x;
-
-        var tile: *Tile = &self.layers.items[self.active_layer].tiles.items[tile_idx];
-        if (tile.occupied and tile.tileset_idx == current_tile) return;
-        tile.tileset_idx = current_tile;
-        tile.occupied = true;
-
-        self.layers.items[self.active_layer].redraw(tileset);
+        self.layers.items[self.active_layer].paintTile(world_position, current_tile, tileset);
     }
 
-    fn draw(self: *TileMap) void {
+    fn draw(self: *TileMap, camera: ray.Camera2D) void {
         const tile_x: f32 = @floatFromInt(self.tile_size.x);
         const tile_y: f32 = @floatFromInt(self.tile_size.y);
         ray.DrawRectangleLinesEx(
@@ -498,7 +571,7 @@ const TileMap = struct {
             ray.BLACK,
         );
         for (self.layers.items) |*layer| {
-            layer.draw();
+            layer.draw(camera);
         }
     }
 
@@ -510,17 +583,24 @@ const TileMap = struct {
     }
 };
 
+// One chunk for all layers, just clear rect and redraw from layer 0->N at a specific square rather than redrawing all rects
+// It would shift tile data to being stored entirely in a layer and then selecting the chunk and place for each layer.
+//
+//
+//
+//
+//
+//
 pub fn main() !void {
     // Rewrite considerations:
     // use more floats! The type conversions are super annoying
     // Do something about draw order? More generalized solution for overlapping?
-    const width: u32 = 1440;
-    const height: u32 = 960;
+
     const tile_width = 24;
     const tile_height = 24;
 
     // In Tiles
-    const tilemap_dims = Vector2Int{ .x = width * 5, .y = height * 5 };
+    const tilemap_dims = Vector2Int{ .x = screen_width * 5, .y = screen_height * 5 };
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer std.debug.assert(gpa.deinit() == .ok);
@@ -528,7 +608,7 @@ pub fn main() !void {
     var allocator = gpa.allocator();
 
     //ray.SetConfigFlags(ray.FLAG_VSYNC_HINT);
-    ray.InitWindow(width, height, "zig raylib example");
+    ray.InitWindow(screen_width, screen_height, "zig raylib example");
     defer ray.CloseWindow();
     ray.SetTargetFPS(144);
     var display_text: [20]u8 = undefined;
@@ -538,8 +618,9 @@ pub fn main() !void {
     var tilemap = try TileMap.init(
         allocator,
         tilemap_dims,
+        Vector2Int{ .x = screen_width, .y = screen_height },
         Vector2Int{ .x = tile_width, .y = tile_width },
-        5,
+        2,
     );
     defer tilemap.deinit();
 
@@ -558,7 +639,7 @@ pub fn main() !void {
         .x = tilemap_dims.x / 2,
         .y = tilemap_dims.y / 2,
     };
-    camera.offset = ray.Vector2{ .x = width / 2, .y = height / 2 };
+    camera.offset = ray.Vector2{ .x = screen_width / 2, .y = screen_height / 2 };
     camera.rotation = 0.0;
     camera.zoom = 1.0;
     const movement_speed: f32 = 500.0;
@@ -618,7 +699,7 @@ pub fn main() !void {
         ray.ClearBackground(ray.BLUE);
 
         ray.BeginMode2D(camera);
-        tilemap.draw();
+        tilemap.draw(camera);
         ray.EndMode2D();
 
         if (tileset_picker.visible) {
