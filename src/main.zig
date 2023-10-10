@@ -283,6 +283,8 @@ const Tile = struct {
     occupied: bool,
 };
 
+const Chunk = struct {};
+
 const Layer = struct {
     tiles: std.ArrayList(Tile),
     tile_dims: Vector2Int,
@@ -417,49 +419,50 @@ const TileMap = struct {
         // Get Chunk here
         const chunk_coords = self.worldPositionToChunkCoords(world_position);
         const chunk_idx = chunk_coords.y * self.layer_dims.x + chunk_coords.x;
+        if (chunk_idx < 0 or chunk_idx >= self.chunks.items.len) {
+            return;
+        }
         if (self.chunks.items[chunk_idx] == null) {
             self.createChunk(chunk_idx);
         }
-        var chunk_position: Vector2 = .{
+        const chunk_position = Vector2{
             .x = @floatFromInt(chunk_coords.x * self.chunk_size.x),
             .y = @floatFromInt(chunk_coords.y * self.chunk_size.y),
-        };
-        var chunk_tile_position: Vector2 = .{
-            .x = world_position.x - chunk_position.x,
-            .y = world_position.y - chunk_position.y,
         };
         const tile_size_x: f32 = @floatFromInt(self.tile_size.x);
         const tile_size_y: f32 = @floatFromInt(self.tile_size.y);
         const tile_coords = Vector2Int{
-            .x = @intFromFloat(chunk_tile_position.x / tile_size_x),
-            .y = @intFromFloat(chunk_tile_position.y / tile_size_y),
+            .x = @intFromFloat(world_position.x / tile_size_x),
+            .y = @intFromFloat(world_position.y / tile_size_y),
         };
         const tile_idx: u32 = tile_coords.y * self.tile_dims.x + tile_coords.x;
-
         var tile: *Tile = &self.layers.items[self.active_layer].tiles.items[tile_idx];
         if (tile.occupied == true and tile.tileset_idx == current_tile) {
             return;
         }
         tile.tileset_idx = current_tile;
         tile.occupied = true;
-        const tile_position = Vector2{
-            .x = @floatFromInt(self.tile_size.x * tile_coords.x),
-            .y = @floatFromInt(self.tile_size.y * tile_coords.y),
+        // Need to convert tilecoords in world space to chunk
+
+        const tile_chunk_pos: Vector2 = .{
+            .x = @divFloor((world_position.x - chunk_position.x), tile_size_x) * tile_size_x,
+            .y = @divFloor((world_position.y - chunk_position.y), tile_size_y) * tile_size_y,
         };
+
         // Loop over layers and paint chunk
         //// Clear tile
         ray.BeginTextureMode(self.chunks.items[chunk_idx].?);
         ray.DrawRectangleRec(ray.Rectangle{
-            .x = tile_position.x,
-            .y = tile_position.y,
-            .width = @floatFromInt(self.tile_size.x),
-            .height = @floatFromInt(self.tile_size.y),
+            .x = tile_chunk_pos.x,
+            .y = tile_chunk_pos.y,
+            .width = tile_size_x,
+            .height = tile_size_y,
         }, ray.BLUE);
         for (self.layers.items) |*layer| {
             if (layer.tiles.items[tile_idx].occupied != true) {
                 continue;
             }
-            tileset.draw_tile(layer.tiles.items[tile_idx].tileset_idx, tile_position);
+            tileset.draw_tile(layer.tiles.items[tile_idx].tileset_idx, tile_chunk_pos);
         }
         ray.EndTextureMode();
     }
@@ -523,9 +526,6 @@ const TileMap = struct {
     }
 };
 
-// One chunk for all layers, just clear rect and redraw from layer 0->N at a specific square rather than redrawing all rects
-// It would shift tile data to being stored entirely in a layer and then selecting the chunk and place for each layer.
-
 pub fn main() !void {
     // Rewrite considerations:
     // use more floats! The type conversions are super annoying
@@ -545,7 +545,7 @@ pub fn main() !void {
     //ray.SetConfigFlags(ray.FLAG_VSYNC_HINT);
     ray.InitWindow(screen_width, screen_height, "zig raylib example");
     defer ray.CloseWindow();
-    ray.SetTargetFPS(144);
+    //ray.SetTargetFPS(144);
     var display_text: [20]u8 = undefined;
     var layer_text: [20]u8 = undefined;
     var coord_text: [20]u8 = undefined;
