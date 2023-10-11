@@ -392,30 +392,7 @@ const TileMap = struct {
         };
     }
 
-    fn update(self: *TileMap, mouse_state: MouseState, key_pressed: c_int, mouse_over_ui: bool, camera: ray.Camera2D, current_tile: u32, tileset: TileSet) void {
-        self.active_layer = switch (key_pressed) {
-            ray.KEY_KP_0 => 0,
-            ray.KEY_KP_1 => 1,
-            ray.KEY_KP_2 => 2,
-            ray.KEY_KP_3 => 3,
-            ray.KEY_KP_4 => 4,
-            else => self.active_layer,
-        };
-
-        // Ignore Offscreen
-        if (mouse_over_ui or
-            !mouse_state.left_button.is_down or
-            mouse_state.position.x < 0.0 or
-            mouse_state.position.y < 0.0)
-        {
-            return;
-        }
-
-        var world_position = Vector2.fromRayVector(ray.GetScreenToWorld2D(ray.Vector2{ .x = mouse_state.position.x, .y = mouse_state.position.y }, camera));
-        if (self.map_bounds.containsPoint(Vector2{ .x = world_position.x, .y = world_position.y }) == false) {
-            return;
-        }
-
+    fn paintTile(self: *TileMap, world_position: Vector2, current_tile: u32, tileset: TileSet) void {
         // Get Chunk here
         const chunk_coords = self.worldPositionToChunkCoords(world_position);
         const chunk_idx = chunk_coords.y * self.layer_dims.x + chunk_coords.x;
@@ -467,8 +444,41 @@ const TileMap = struct {
         ray.EndTextureMode();
     }
 
+    fn paintRegion(self: *TileMap, world_position: Vector2, current_tile: u32, tileset: TileSet) void {
+        _ = self;
+        _ = world_position;
+        _ = current_tile;
+        _ = tileset;
+    }
+
+    fn update(self: *TileMap, mouse_state: MouseState, key_pressed: c_int, mouse_over_ui: bool, camera: ray.Camera2D, current_tile: u32, tileset: TileSet) void {
+        self.active_layer = switch (key_pressed) {
+            ray.KEY_KP_0 => 0,
+            ray.KEY_KP_1 => 1,
+            ray.KEY_KP_2 => 2,
+            ray.KEY_KP_3 => 3,
+            ray.KEY_KP_4 => 4,
+            else => self.active_layer,
+        };
+
+        // Ignore Offscreen
+        if (mouse_over_ui or
+            !mouse_state.left_button.is_down or
+            mouse_state.position.x < 0.0 or
+            mouse_state.position.y < 0.0)
+        {
+            return;
+        }
+
+        var world_position = Vector2.fromRayVector(ray.GetScreenToWorld2D(ray.Vector2{ .x = mouse_state.position.x, .y = mouse_state.position.y }, camera));
+        if (self.map_bounds.containsPoint(Vector2{ .x = world_position.x, .y = world_position.y }) == false) {
+            return;
+        }
+
+        self.paintTile(world_position, current_tile, tileset);
+    }
+
     fn draw(self: *TileMap, camera: ray.Camera2D) void {
-        _ = camera;
         const tile_x: f32 = @floatFromInt(self.tile_size.x);
         const tile_y: f32 = @floatFromInt(self.tile_size.y);
         ray.DrawRectangleLinesEx(
@@ -482,32 +492,48 @@ const TileMap = struct {
             ray.BLACK,
         );
 
+        const tl = ray.GetScreenToWorld2D(ray.Vector2{ .x = 0, .y = 0 }, camera);
+        const br = ray.GetScreenToWorld2D(ray.Vector2{ .x = screen_width, .y = screen_height }, camera);
+        const layer_x: f32 = @floatFromInt(self.layer_dims.x * self.chunk_size.x);
+        const layer_y: f32 = @floatFromInt(self.layer_dims.y * self.chunk_size.y);
+        const tl_chunk = self.worldPositionToChunkCoords(Vector2{
+            .x = std.math.clamp(tl.x, 0.0, layer_x),
+            .y = std.math.clamp(tl.y, 0.0, layer_y),
+        });
+        const br_chunk = self.worldPositionToChunkCoords(Vector2{
+            .x = std.math.clamp(br.x, 0.0, layer_x),
+            .y = std.math.clamp(br.y, 0.0, layer_y),
+        });
+        var x: u32 = tl_chunk.x;
+        var y: u32 = tl_chunk.y;
         const chunk_x: f32 = @floatFromInt(self.chunk_size.x);
         const chunk_y: f32 = @floatFromInt(self.chunk_size.y);
-        var i: u32 = 0;
-        while (i < self.chunks.items.len) : (i += 1) {
-            if (self.chunks.items[i] == null) {
-                continue;
+        while (y <= br_chunk.y and y < self.layer_dims.y) : (y += 1) {
+            x = 0;
+            while (x <= br_chunk.x and x < self.layer_dims.x) : (x += 1) {
+                const chunk_idx = y * self.layer_dims.x + x;
+                if (self.chunks.items[chunk_idx] == null) {
+                    continue;
+                }
+                const position = Vector2{
+                    .x = @floatFromInt(self.chunk_size.x * x),
+                    .y = @floatFromInt(self.chunk_size.y * y),
+                };
+                ray.DrawTextureRec(
+                    self.chunks.items[chunk_idx].?.texture,
+                    ray.Rectangle{
+                        .x = 0,
+                        .y = 0,
+                        .width = chunk_x,
+                        .height = -1.0 * chunk_y,
+                    },
+                    ray.Vector2{
+                        .x = position.x,
+                        .y = position.y,
+                    },
+                    ray.WHITE,
+                );
             }
-            const coords = tileIdxToTileCoords(i, self.layer_dims);
-            const position = Vector2{
-                .x = @floatFromInt(self.chunk_size.x * coords.x),
-                .y = @floatFromInt(self.chunk_size.y * coords.y),
-            };
-            ray.DrawTextureRec(
-                self.chunks.items[i].?.texture,
-                ray.Rectangle{
-                    .x = 0,
-                    .y = 0,
-                    .width = chunk_x,
-                    .height = -1.0 * chunk_y,
-                },
-                ray.Vector2{
-                    .x = position.x,
-                    .y = position.y,
-                },
-                ray.WHITE,
-            );
         }
     }
 
@@ -545,7 +571,7 @@ pub fn main() !void {
     //ray.SetConfigFlags(ray.FLAG_VSYNC_HINT);
     ray.InitWindow(screen_width, screen_height, "zig raylib example");
     defer ray.CloseWindow();
-    //ray.SetTargetFPS(144);
+    ray.SetTargetFPS(144);
     var display_text: [20]u8 = undefined;
     var layer_text: [20]u8 = undefined;
     var coord_text: [20]u8 = undefined;
