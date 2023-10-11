@@ -10,7 +10,7 @@
     - Configure Tilemap Size
     - Configure Tile size
     - ~~Camera~~
-    - Movement around the map
+    - ~~Movement around the map~~
     - ~~Larger than 1 screen tilemap~~
     - ~~Zoom in/out of tilemap~~
     - Show a grid
@@ -29,7 +29,7 @@
     - Show current tile (Probably under the mouse), maybe also a display box
 - **Performance**
     - Don't rebuild texture if the tile being placed or erased is the same
-    - Chunkify the layers
+    - ~~Chunkify the layers~~
 
 - Read/Write format
 - Lua scripting for map generation
