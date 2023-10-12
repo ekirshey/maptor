@@ -283,7 +283,9 @@ const Tile = struct {
     occupied: bool,
 };
 
-const Chunk = struct {};
+const Chunk = struct {
+    texture: ?ray.RenderTexture2D,
+};
 
 const Layer = struct {
     tiles: std.ArrayList(Tile),
@@ -442,40 +444,6 @@ const TileMap = struct {
             tileset.draw_tile(layer.tiles.items[tile_idx].tileset_idx, tile_chunk_pos);
         }
         ray.EndTextureMode();
-    }
-
-    fn paintRegion(self: *TileMap, world_position: Vector2, current_tile: u32, tileset: TileSet) void {
-        _ = self;
-        _ = world_position;
-        _ = current_tile;
-        _ = tileset;
-    }
-
-    fn update(self: *TileMap, mouse_state: MouseState, key_pressed: c_int, mouse_over_ui: bool, camera: ray.Camera2D, current_tile: u32, tileset: TileSet) void {
-        self.active_layer = switch (key_pressed) {
-            ray.KEY_KP_0 => 0,
-            ray.KEY_KP_1 => 1,
-            ray.KEY_KP_2 => 2,
-            ray.KEY_KP_3 => 3,
-            ray.KEY_KP_4 => 4,
-            else => self.active_layer,
-        };
-
-        // Ignore Offscreen
-        if (mouse_over_ui or
-            !mouse_state.left_button.is_down or
-            mouse_state.position.x < 0.0 or
-            mouse_state.position.y < 0.0)
-        {
-            return;
-        }
-
-        var world_position = Vector2.fromRayVector(ray.GetScreenToWorld2D(ray.Vector2{ .x = mouse_state.position.x, .y = mouse_state.position.y }, camera));
-        if (self.map_bounds.containsPoint(Vector2{ .x = world_position.x, .y = world_position.y }) == false) {
-            return;
-        }
-
-        self.paintTile(world_position, current_tile, tileset);
     }
 
     fn draw(self: *TileMap, camera: ray.Camera2D) void {
@@ -642,15 +610,26 @@ pub fn main() !void {
             camera.target.x += movement_speed * ray.GetFrameTime() * 1.0 / camera.zoom;
         }
 
+        tilemap.active_layer = switch (key_pressed) {
+            ray.KEY_KP_0 => 0,
+            ray.KEY_KP_1 => 1,
+            ray.KEY_KP_2 => 2,
+            ray.KEY_KP_3 => 3,
+            ray.KEY_KP_4 => 4,
+            else => tilemap.active_layer,
+        };
+
         var mouse_over_ui = tileset_picker.mouseOverPicker(mouse_state.position);
-        tilemap.update(
-            mouse_state,
-            key_pressed,
-            mouse_over_ui,
-            camera,
-            tileset_picker.current_tile,
-            tileset,
-        );
+        if (!mouse_over_ui and
+            mouse_state.left_button.is_down and
+            mouse_state.position.x >= 0.0 and
+            mouse_state.position.y >= 0.0)
+        {
+            var world_position = Vector2.fromRayVector(ray.GetScreenToWorld2D(ray.Vector2{ .x = mouse_state.position.x, .y = mouse_state.position.y }, camera));
+            if (tilemap.map_bounds.containsPoint(Vector2{ .x = world_position.x, .y = world_position.y })) {
+                tilemap.paintTile(world_position, tileset_picker.current_tile, tileset);
+            }
+        }
 
         if (tileset_picker.visible) {
             tileset_picker.update(mouse_state);
