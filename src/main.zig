@@ -640,7 +640,7 @@ pub fn main() !void {
     const tile_height = 24;
 
     // In Tiles
-    const tilemap_dims = Vector2Int{ .x = screen_width * 25, .y = screen_height * 25 };
+    const tilemap_dims = Vector2Int{ .x = screen_width * 5, .y = screen_height * 5 };
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer std.debug.assert(gpa.deinit() == .ok);
