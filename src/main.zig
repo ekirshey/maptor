@@ -1,6 +1,5 @@
 const std = @import("std");
-const ray = @import("raylib.zig");
-const ui = @import("ui.zig");
+const ray = @cImport(@cInclude("raylib.h"));
 
 const screen_width: u32 = 1440;
 const screen_height: u32 = 960;
@@ -29,7 +28,7 @@ const MouseState = struct {
             .is_pressed = if (ray.IsMouseButtonPressed(ray.MOUSE_BUTTON_RIGHT)) true else false,
         };
 
-        var mouse_position = ray.GetMousePosition();
+        const mouse_position = ray.GetMousePosition();
         return MouseState{ .position = .{ .x = mouse_position.x, .y = mouse_position.y }, .left_button = left_button, .right_button = right_button };
     }
 };
@@ -84,10 +83,10 @@ fn Rect(comptime T: type) type {
             if (!self.overlaps(other)) {
                 return null;
             }
-            var x1 = if (self.x > other.x) self.x else other.x;
-            var y1 = if (self.y > other.y) self.y else other.y;
-            var x2 = if ((self.x + self.width) < (other.x + other.width)) self.x + self.width else other.x + other.width;
-            var y2 = if ((self.y + self.height) < (other.y + other.height)) self.y + self.height else other.y + other.height;
+            const x1 = if (self.x > other.x) self.x else other.x;
+            const y1 = if (self.y > other.y) self.y else other.y;
+            const x2 = if ((self.x + self.width) < (other.x + other.width)) self.x + self.width else other.x + other.width;
+            const y2 = if ((self.y + self.height) < (other.y + other.height)) self.y + self.height else other.y + other.height;
 
             return Self{
                 .x = x1,
@@ -199,7 +198,7 @@ const TileSetPicker = struct {
     render_texture: ray.RenderTexture2D,
 
     fn init(position: Vector2, tileset_offset: Vector2, tileset: *TileSet) TileSetPicker {
-        var tileset_dimensions: Vector2 = .{
+        const tileset_dimensions: Vector2 = .{
             .x = @floatFromInt(tileset.texture.width),
             .y = @floatFromInt(tileset.texture.height),
         };
@@ -236,7 +235,7 @@ const TileSetPicker = struct {
         var i: u32 = 0;
         while (i < self.tileset.tilecount) : (i += 1) {
             const frame_rect = self.tileset.get_frame_rect(i);
-            var position = ray.Vector2{
+            const position = ray.Vector2{
                 .x = self.tileset_offset.x + frame_rect.x,
                 .y = self.tileset_offset.y + frame_rect.y,
             };
@@ -268,7 +267,7 @@ const TileSetPicker = struct {
             self.zoom_level -= 1;
         }
         if (!self.mouseOverPicker(mouse_state.position)) return;
-        var tile_position = Vector2{
+        const tile_position = Vector2{
             .x = mouse_state.position.x - self.tileset_offset.x - self.position.x,
             .y = mouse_state.position.y - self.tileset_offset.y - self.position.y,
         };
@@ -278,9 +277,9 @@ const TileSetPicker = struct {
 
         const tile_width: f32 = @floatFromInt(self.tileset.tilesize.x);
         const tile_height: f32 = @floatFromInt(self.tileset.tilesize.x);
-        var tile_x: f32 = tile_position.x / tile_width;
-        var tile_y: f32 = tile_position.y / tile_height;
-        var tile_coord: Vector2Int = .{
+        const tile_x: f32 = tile_position.x / tile_width;
+        const tile_y: f32 = tile_position.y / tile_height;
+        const tile_coord: Vector2Int = .{
             .x = @intFromFloat(tile_x),
             .y = @intFromFloat(tile_y),
         };
@@ -395,7 +394,7 @@ const TileMap = struct {
     }
 
     fn createChunk(self: *TileMap) ray.RenderTexture2D {
-        var texture = ray.LoadRenderTexture(@intCast(self.chunk_size.x), @intCast(self.chunk_size.y));
+        const texture = ray.LoadRenderTexture(@intCast(self.chunk_size.x), @intCast(self.chunk_size.y));
         ray.BeginTextureMode(texture);
         ray.ClearBackground(ray.BLANK);
         ray.EndTextureMode();
@@ -512,12 +511,12 @@ const TileMap = struct {
                 .height = region.height,
             }, ray.BLUE);
 
-            var chunk_tile_start = Vector2Int{
+            const chunk_tile_start = Vector2Int{
                 .x = @intFromFloat(region.x / ftile_x),
                 .y = @intFromFloat(region.y / ftile_y),
             };
 
-            var chunk_tile_end = Vector2Int{
+            const chunk_tile_end = Vector2Int{
                 .x = @intFromFloat((region.x + region.width) / ftile_x),
                 .y = @intFromFloat((region.y + region.height) / ftile_y),
             };
@@ -645,7 +644,7 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer std.debug.assert(gpa.deinit() == .ok);
 
-    var allocator = gpa.allocator();
+    const allocator = gpa.allocator();
 
     //ray.SetConfigFlags(ray.FLAG_VSYNC_HINT);
     ray.InitWindow(screen_width, screen_height, "zig raylib example");
@@ -690,7 +689,7 @@ pub fn main() !void {
     //var end_position: Vector2 = Vector2{ .x = 0, .y = 0 };
     while (!ray.WindowShouldClose()) {
         // Get Input
-        var mouse_state = MouseState.getState();
+        const mouse_state = MouseState.getState();
         const key_pressed = ray.GetKeyPressed();
 
         // cap this
@@ -744,11 +743,11 @@ pub fn main() !void {
             else => tilemap.active_layer,
         };
 
-        var mouse_over_ui = tileset_picker.mouseOverPicker(mouse_state.position);
-        var world_position = Vector2.fromRayVector(ray.GetScreenToWorld2D(ray.Vector2{ .x = mouse_state.position.x, .y = mouse_state.position.y }, camera));
+        const mouse_over_ui = tileset_picker.mouseOverPicker(mouse_state.position);
+        const world_position = Vector2.fromRayVector(ray.GetScreenToWorld2D(ray.Vector2{ .x = mouse_state.position.x, .y = mouse_state.position.y }, camera));
 
         if (!mouse_over_ui and tilemap.map_bounds.containsPoint(world_position.x, world_position.y)) {
-            var tile_coord = tilemap.worldToTileCoords(world_position);
+            const tile_coord = tilemap.worldToTileCoords(world_position);
             const coord_output = try std.fmt.bufPrint(&coord_text, "({d},{d})", .{ tile_coord.x, tile_coord.y });
             coord_text[coord_output.len] = 0;
 

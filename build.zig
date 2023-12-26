@@ -1,4 +1,5 @@
 const std = @import("std");
+const raySdk = @import("raylib/src/build.zig");
 
 // Although this function looks imperative, note that its job is to
 // declaratively construct a build graph that will be executed by an external
@@ -24,29 +25,14 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    const raylib_optimize = b.option(
-        std.builtin.OptimizeMode,
-        "raylib-optimize",
-        "Prioritize performance, safety, or binary size (-O flag), defaults to value of optimize option",
-    ) orelse .ReleaseFast;
-
-    const strip = b.option(
-        bool,
-        "strip",
-        "Strip debug info to reduce binary size, defaults to false",
-    ) orelse false;
-    exe.strip = strip;
-
-    const raylib_dep = b.dependency("raylib", .{
-        .target = target,
-        .optimize = raylib_optimize,
-    });
-    exe.linkLibrary(raylib_dep.artifact("raylib"));
-
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
     // step when running `zig build`).
     b.installArtifact(exe);
+
+    const raylib = raySdk.addRaylib(b, target, optimize, .{});
+    exe.addIncludePath(.{ .path = "raylib/src" });
+    exe.linkLibrary(raylib);
 
     // This *creates* a Run step in the build graph, to be executed when another
     // step is evaluated that depends on it. The next line below will establish
